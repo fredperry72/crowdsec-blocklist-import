@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  crowdsec-blocklist-import:
+    build: .
+    # Or use pre-built:
+    # image: ghcr.io/wolffcatskyy/crowdsec-blocklist-import:latest
+    container_name: crowdsec-blocklist-import
+    restart: "no"  # Run once and exit
+    
+    environment:
+      # CrowdSec container name (must be accessible via Docker socket)
+      - CROWDSEC_CONTAINER=crowdsec
+      
+      # How long decisions last (run script daily to refresh)
+      - DECISION_DURATION=24h
+      
+      # Logging (DEBUG, INFO, WARN, ERROR)
+      - LOG_LEVEL=INFO
+      
+      # Timezone
+      - TZ=America/New_York
+    
+    volumes:
+      # Docker socket for accessing CrowdSec container
+      - /var/run/docker.sock:/var/run/docker.sock:ro
