@@ -4,11 +4,14 @@
 
 set -e
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 CROWDSEC_CONTAINER="${CROWDSEC_CONTAINER:-crowdsec}"
 DECISION_DURATION="${DECISION_DURATION:-24h}"
 TEMP_DIR="/tmp/blocklist-import"
+
+# Mode: "docker" or "native" (auto-detected if not set)
+MODE="${MODE:-auto}"
 
 # Telemetry (enabled by default, set TELEMETRY_ENABLED=false to disable)
 TELEMETRY_ENABLED="${TELEMETRY_ENABLED:-true}"
@@ -56,15 +59,30 @@ send_telemetry() {
     debug "Telemetry sent"
 }
 
-# Find CrowdSec container
+# Run cscli command (handles both Docker and native modes)
+run_cscli() {
+    if [ "$MODE" = "native" ]; then
+        cscli "$@"
+    else
+        docker exec "$CROWDSEC_CONTAINER" cscli "$@"
+    fi
+}
+
+# Run cscli with stdin (for import)
+run_cscli_stdin() {
+    if [ "$MODE" = "native" ]; then
+        cscli "$@"
+    else
+        docker exec -i "$CROWDSEC_CONTAINER" cscli "$@"
+    fi
+}
+
+# Find CrowdSec container (Docker mode only)
 find_crowdsec_container() {
     local specified="$1"
 
     # First, check if Docker is accessible
     if ! docker ps &>/dev/null; then
-        error "Cannot access Docker. Make sure:"
-        error "  1. Docker socket is mounted: -v /var/run/docker.sock:/var/run/docker.sock:ro"
-        error "  2. You have permission to access the Docker socket"
         return 1
     fi
 
@@ -99,27 +117,75 @@ find_crowdsec_container() {
         fi
     done
 
-    # Not found - show helpful error
-    error "Cannot find CrowdSec container '$specified'"
-    error ""
-    error "Available containers:"
-    docker ps --format '  {{.Names}} ({{.Image}})' 2>/dev/null || error "  (none found)"
-    error ""
-    error "Troubleshooting:"
-    error "  1. Find your CrowdSec container: docker ps | grep -i crowdsec"
-    error "  2. Set the correct name: -e CROWDSEC_CONTAINER=your_container_name"
-    error "  3. Container names with Docker Compose are often prefixed:"
-    error "     - projectname_crowdsec_1"
-    error "     - projectname-crowdsec-1"
-    error ""
-    error "Example: docker run -e CROWDSEC_CONTAINER=mystack_crowdsec_1 ..."
     return 1
 }
 
-# Check if we can access CrowdSec
-check_crowdsec() {
-    CROWDSEC_CONTAINER=$(find_crowdsec_container "$CROWDSEC_CONTAINER") || exit 1
-    info "Connected to CrowdSec container '$CROWDSEC_CONTAINER'"
+# Detect and configure CrowdSec access mode
+setup_crowdsec() {
+    if [ "$MODE" = "native" ]; then
+        # User explicitly requested native mode
+        if ! command -v cscli &>/dev/null; then
+            error "Native mode requested but 'cscli' not found in PATH"
+            error "Install CrowdSec or use Docker mode"
+            exit 1
+        fi
+        if ! cscli version &>/dev/null; then
+            error "Cannot run 'cscli version' - check CrowdSec installation"
+            exit 1
+        fi
+        info "Using native CrowdSec (cscli in PATH)"
+        return
+    fi
+
+    if [ "$MODE" = "docker" ]; then
+        # User explicitly requested Docker mode
+        CROWDSEC_CONTAINER=$(find_crowdsec_container "$CROWDSEC_CONTAINER") || {
+            error "Docker mode requested but cannot find CrowdSec container"
+            show_docker_help
+            exit 1
+        }
+        info "Using Docker mode with container '$CROWDSEC_CONTAINER'"
+        return
+    fi
+
+    # Auto-detect mode
+    debug "Auto-detecting CrowdSec mode..."
+
+    # Try native first (if cscli is in PATH and working)
+    if command -v cscli &>/dev/null && cscli version &>/dev/null 2>&1; then
+        MODE="native"
+        info "Auto-detected native CrowdSec (cscli in PATH)"
+        return
+    fi
+
+    # Try Docker
+    if CROWDSEC_CONTAINER=$(find_crowdsec_container "$CROWDSEC_CONTAINER" 2>/dev/null); then
+        MODE="docker"
+        info "Auto-detected Docker mode with container '$CROWDSEC_CONTAINER'"
+        return
+    fi
+
+    # Neither worked
+    error "Cannot find CrowdSec installation"
+    error ""
+    error "Options:"
+    error "  1. Native install: Make sure 'cscli' is in your PATH"
+    error "  2. Docker: Mount the socket and set CROWDSEC_CONTAINER"
+    error ""
+    show_docker_help
+    exit 1
+}
+
+show_docker_help() {
+    error "Docker troubleshooting:"
+    error "  1. Mount socket: -v /var/run/docker.sock:/var/run/docker.sock:ro"
+    error "  2. Find container: docker ps | grep -i crowdsec"
+    error "  3. Set name: -e CROWDSEC_CONTAINER=your_container_name"
+    error ""
+    if docker ps &>/dev/null 2>&1; then
+        error "Available containers:"
+        docker ps --format '  {{.Names}} ({{.Image}})' 2>/dev/null || true
+    fi
 }
 
 # Fetch a blocklist
@@ -151,7 +217,7 @@ main() {
     info "CrowdSec Blocklist Import v$VERSION"
     info "Decision duration: $DECISION_DURATION"
 
-    check_crowdsec
+    setup_crowdsec
 
     mkdir -p "$TEMP_DIR"
     cd "$TEMP_DIR"
@@ -330,7 +396,7 @@ EOF
 
     # Get existing decisions to avoid duplicates
     info "Checking existing CrowdSec decisions..."
-    docker exec "$CROWDSEC_CONTAINER" cscli decisions list 2>/dev/null | \
+    run_cscli decisions list 2>/dev/null | \
         awk -F'|' '{print $4}' | \
         grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | \
         sort -u > existing.txt || touch existing.txt
@@ -348,7 +414,7 @@ EOF
         info "No new IPs to import (all $total_ips IPs already in CrowdSec)"
     else
         info "Importing $import_count new IPs into CrowdSec..."
-        result=$(cat to_import.txt | docker exec -i "$CROWDSEC_CONTAINER" cscli decisions import -i - --format values --duration "$DECISION_DURATION" --reason "external_blocklist" 2>&1)
+        result=$(cat to_import.txt | run_cscli_stdin decisions import -i - --format values --duration "$DECISION_DURATION" --reason "external_blocklist" 2>&1)
         info "Import complete: $import_count IPs added (total coverage: $total_ips IPs)"
     fi
 
