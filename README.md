@@ -90,6 +90,25 @@ docker run --rm \
   ghcr.io/wolffcatskyy/crowdsec-blocklist-import:latest
 ```
 
+### Direct Mode (No Docker Socket)
+
+If you prefer not to mount the Docker socket, you can run the script directly on the host:
+
+```bash
+# Download and run directly (requires curl, cscli in PATH)
+curl -sL https://raw.githubusercontent.com/wolffcatskyy/crowdsec-blocklist-import/main/import.sh | bash
+```
+
+Or clone and run:
+
+```bash
+git clone https://github.com/wolffcatskyy/crowdsec-blocklist-import.git
+cd crowdsec-blocklist-import
+./import.sh
+```
+
+**Note:** Direct mode requires CrowdSec installed natively (not in Docker) with `cscli` in your PATH.
+
 ## Configuration
 
 | Environment Variable | Default | Description |
@@ -99,6 +118,23 @@ docker run --rm \
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARN, ERROR) |
 | `TZ` | `UTC` | Timezone for logs |
 | `TELEMETRY_ENABLED` | `true` | Anonymous usage stats (set false to disable) |
+
+## Security
+
+### Why Docker Socket Access?
+
+This tool needs to run `cscli decisions import` inside your CrowdSec container. Docker mode uses `docker exec` which requires socket access.
+
+**Mitigations:**
+- Socket is mounted **read-only** (`:ro`) - container cannot modify Docker
+- Container runs as non-root internally
+- Runs once and exits (not a long-running daemon)
+- Fully open source - audit the code yourself
+
+**Alternatives if you're concerned:**
+1. **Direct mode**: Run `import.sh` on the host (no Docker needed)
+2. **Native CrowdSec**: If CrowdSec isn't containerized, direct mode works without any socket access
+3. **Coming soon**: Direct LAPI mode ([Issue #9](https://github.com/wolffcatskyy/crowdsec-blocklist-import/issues/9)) will allow importing via HTTP API without Docker socket
 
 ## How It Works
 
@@ -120,7 +156,7 @@ docker run --rm \
 ```
 
 1. **Fetch**: Downloads 28+ blocklists from public sources
-2. **Combine**: Merges all IPs and removes duplicates  
+2. **Combine**: Merges all IPs and removes duplicates
 3. **Filter**: Excludes private ranges (10.x, 192.168.x, etc.)
 4. **Dedupe**: Queries CrowdSec for existing decisions to avoid duplicates
 5. **Import**: Bulk imports new IPs via `cscli decisions import`
@@ -137,8 +173,6 @@ docker exec crowdsec cscli decisions list -l 20
 # Remove all imported decisions (if needed)
 docker exec crowdsec cscli decisions delete --all --reason external_blocklist
 ```
-
-## Related Projects
 
 ## Troubleshooting
 
@@ -163,13 +197,23 @@ This tool must run on the same Docker host as CrowdSec. It cannot connect to rem
 
 This means all IPs from the blocklists are already in your CrowdSec decisions (from CAPI, console lists, or previous imports). This is normal on subsequent runs.
 
+### Source Fetch Warnings
+
+Some blocklists may be temporarily unavailable. The script will show:
+```
+Sources: 25 successful, 3 unavailable (normal - public lists are sometimes down)
+```
+
+This is expected - public lists occasionally go offline. The script continues with available sources and will retry unavailable ones on the next run.
+
 ### Prerequisites
 
 Before using this tool, you need:
-1. **CrowdSec running** in a Docker container
+1. **CrowdSec running** in a Docker container (or natively for direct mode)
 2. **CrowdSec LAPI working** - verify with: `docker exec crowdsec cscli decisions list`
-3. **Docker socket access** for this tool to execute commands in CrowdSec
+3. **Docker socket access** for Docker mode (or `cscli` in PATH for direct mode)
 
+## Related Projects
 
 | Project | Description |
 |---------|-------------|
