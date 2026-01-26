@@ -98,6 +98,7 @@ docker run --rm \
 | `DECISION_DURATION` | `24h` | How long decisions last (refresh daily) |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARN, ERROR) |
 | `TZ` | `UTC` | Timezone for logs |
+| `TELEMETRY_ENABLED` | `true` | Anonymous usage stats (set false to disable) |
 
 ## How It Works
 
