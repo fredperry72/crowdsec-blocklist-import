@@ -140,6 +140,37 @@ docker exec crowdsec cscli decisions delete --all --reason external_blocklist
 
 ## Related Projects
 
+## Troubleshooting
+
+### "Cannot access CrowdSec container"
+
+The tool uses `docker exec` to run commands inside your CrowdSec container. Common issues:
+
+**1. Wrong container name**
+```bash
+# Find your actual CrowdSec container name
+docker ps --format '{{.Names}}' | grep -i crowdsec
+```
+If using Docker Compose, the name might be `projectname_crowdsec_1` or `projectname-crowdsec-1`.
+
+**2. Docker socket not mounted**
+Make sure you have `-v /var/run/docker.sock:/var/run/docker.sock:ro` in your docker run/compose.
+
+**3. Different Docker host**
+This tool must run on the same Docker host as CrowdSec. It cannot connect to remote Docker daemons.
+
+### "No new IPs to import"
+
+This means all IPs from the blocklists are already in your CrowdSec decisions (from CAPI, console lists, or previous imports). This is normal on subsequent runs.
+
+### Prerequisites
+
+Before using this tool, you need:
+1. **CrowdSec running** in a Docker container
+2. **CrowdSec LAPI working** - verify with: `docker exec crowdsec cscli decisions list`
+3. **Docker socket access** for this tool to execute commands in CrowdSec
+
+
 | Project | Description |
 |---------|-------------|
 | **[crowdsec-unifi-bouncer](https://github.com/wolffcatskyy/crowdsec-unifi-bouncer)** | Sync CrowdSec decisions to UniFi firewall groups |
