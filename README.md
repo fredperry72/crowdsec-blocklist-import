@@ -1,5 +1,9 @@
 # CrowdSec Blocklist Import
 
+![Installs](https://img.shields.io/endpoint?url=https://bouncer-telemetry.ms2738.workers.dev/badge/blocklist-import)
+![License](https://img.shields.io/github/license/wolffcatskyy/crowdsec-blocklist-import)
+![Docker](https://img.shields.io/badge/docker-ready-blue)
+
 **Get premium-level threat protection for FREE.** Import 60,000+ IPs from 28 public threat feeds directly into CrowdSec - no subscription required.
 
 ## Why Use This?
