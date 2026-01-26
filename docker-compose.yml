@@ -20,6 +20,9 @@ services:
       
       # Timezone
       - TZ=America/New_York
+      
+      # Anonymous telemetry (enabled by default, set to false to disable)
+      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
     
     volumes:
       # Docker socket for accessing CrowdSec container
